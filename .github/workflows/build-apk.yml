@@ -39,7 +39,7 @@ jobs:
           yes | "$SDKM" --licenses > /dev/null || true
           "$SDKM" "platforms;android-34" "build-tools;34.0.0" "platform-tools"
 
-      - name: 5. Проверка: секретов нет в отслеживаемых файлах
+      - name: "5. Проверка: секретов нет в отслеживаемых файлах"
         run: |
           ! git grep -nE 'AQ\.[A-Za-z0-9_-]{20,}|sk-[A-Za-z0-9]{20,}' -- .
 
