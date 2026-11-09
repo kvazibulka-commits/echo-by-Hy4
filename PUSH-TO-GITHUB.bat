@@ -1,6 +1,7 @@
 @echo off
 title ECHO - Push to GitHub
 cd /d "%~dp0"
+chcp 65001 >nul
 
 rem Git установлен портативно внутри WorkBuddy и не прописан в системный PATH.
 rem Добавляем его только для этого окна.
@@ -8,11 +9,12 @@ set "PATH=%LOCALAPPDATA%\Programs\WorkBuddyAI\resources\vendor\PortableGit\cmd;%
 
 echo ==============================================================
 echo  ЭХО - отправка кода в GitHub
-echo  Репозиторий: kvazibuka-commits/echo-by-Hy4
+echo  Репозиторий: kvazibulka-commits/echo-by-Hy4
 echo ==============================================================
 echo.
 
 git status
+git remote -v
 if errorlevel 1 (
   echo.
   echo Git не найден. Проверь путь к PortableGit.
@@ -36,7 +38,7 @@ if errorlevel 1 (
   echo.
   echo ==============================================================
   echo  ГОТОВО. Открой вкладку Actions на GitHub:
-  echo  https://github.com/kvazibuka-commits/echo-by-Hy4/actions
+  echo  https://github.com/kvazibulka-commits/echo-by-Hy4/actions
   echo ==============================================================
 )
 pause
