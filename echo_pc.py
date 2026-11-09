@@ -61,11 +61,9 @@ if os.name == "nt":
 
 
 def default_device_id() -> str:
-    """Идентификатор устройства: pc_<имя компьютера>, только [a-z0-9_-]."""
-    cleaned = re.sub(r"[^a-z0-9_-]+", "", platform.node().lower())
-    if not cleaned:
-        cleaned = "unknown"
-    return "pc_" + cleaned
+    """Идентификатор ПК-узла: pc_studio_node (совпадает с дашбордом, чтобы
+    входящие импульсы были видны и в консоли, и в браузере)."""
+    return "pc_studio_node"
 
 
 def normalize_server(server: str) -> str:
