@@ -1,0 +1,61 @@
+name: Сборка ЭХО Android APK (для BlueStacks и смартфонов)
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 1. Загрузка исходного кода проекта
+        uses: actions/checkout@v4
+
+      - name: 2. Установка JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: 3. Установка Gradle 8.7
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: '8.7'
+
+      - name: 4. Android SDK 34 (платформа и build-tools)
+        run: |
+          SDKM="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          if [ ! -x "$SDKM" ]; then SDKM="$(command -v sdkmanager)"; fi
+          yes | "$SDKM" --licenses > /dev/null || true
+          "$SDKM" "platforms;android-34" "build-tools;34.0.0" "platform-tools"
+
+      - name: 5. Проверка: секретов нет в отслеживаемых файлах
+        run: |
+          ! git grep -nE 'AQ\.[A-Za-z0-9_-]{20,}|sk-[A-Za-z0-9]{20,}' -- .
+
+      - name: 6. Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 6a. Round-trip тесты сервера (связка в обе стороны)
+        run: python tests/roundtrip_test.py
+
+      - name: 7. Сборка отладочного APK (Debug)
+        run: |
+          gradle wrapper --gradle-version 8.7 --distribution-type bin
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: 8. Переименование APK для удобства
+        run: |
+          cp app/build/outputs/apk/debug/app-debug.apk echo-radar-debug.apk
+
+      - name: 9. Публикация готового APK для скачивания
+        uses: actions/upload-artifact@v4
+        with:
+          name: echo-radar-debug-apk
+          path: echo-radar-debug.apk
+          retention-days: 30

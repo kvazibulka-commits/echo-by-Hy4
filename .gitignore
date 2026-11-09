@@ -1,0 +1,49 @@
+# Секреты (живой ключ НЕ должен попасть в GitHub)
+echo_config.json
+echo_config.local.json
+*.key
+.env
+.env.*
+
+# База данных
+echo_memory.db
+
+# Бинарники
+*.exe
+*.db
+
+# Архивы версий (использовать git tags вместо папок)
+v1/
+v2/
+v3/
+v4/
+v5/
+v6/
+v7/
+v8/
+v9/
+*.zip
+
+# Cloudflare исходники (отдельный репо)
+cloudflared-master/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.env
+
+# Android build
+*.apk
+*.aab
+build/
+.gradle/
+local.properties
+
+# IDE
+.idea/
+*.iml
+_proto_src/
+.zwork/
+*.tar
+.gradle/

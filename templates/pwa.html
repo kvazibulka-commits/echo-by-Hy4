@@ -1,0 +1,1235 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>ЭХО • Музыкальный Атлас</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  /* ===== ЭХО: дизайн-система. Material 3 Expressive × вечерний город =====
+     Портировано из прототипа echo-prototype (globals.css, phase.ts, sound.ts). */
+
+  :root {
+    /* Spring-токены движения (адаптация M3 Expressive) */
+    --spring-soft: cubic-bezier(0.34, 1.56, 0.64, 1);
+    --spring-bouncy: cubic-bezier(0.18, 1.35, 0.4, 1);
+    --spring-standard: cubic-bezier(0.2, 0, 0, 1);
+    --echo-dur-fast: 0.28s;
+    --echo-dur-spatial: 0.55s;
+
+    /* Динамический цвет (Material You): --echo-hue выставляет JS из текущего трека.
+       Тишина — тёплая лампа фонаря (75). Хром низкий — любой оттенок мирно живёт на тёмном городе. */
+    --echo-hue: 75;
+
+    --bg: oklch(0.15 0.012 70);
+    --bg-hex: #14110d; /* фолбзор для старых браузеров */
+    --fg: oklch(0.93 0.02 85);
+    --card: oklch(0.19 0.015 70);
+    --muted-fg: oklch(0.67 0.02 80);
+    --border-soft: oklch(0.92 0.02 80 / 12%);
+    --accent: oklch(0.82 0.1 var(--echo-hue));
+    --accent-soft: oklch(0.8 0.1 var(--echo-hue) / 0.16);
+    --font-serif: Georgia, "Times New Roman", serif;
+    --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", sans-serif;
+  }
+
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+  html, body { overflow: hidden; }
+  button { touch-action: manipulation; }
+
+  body {
+    margin: 0; padding: 0;
+    background: var(--bg-hex);
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--font-sans);
+    display: flex; flex-direction: column;
+    height: 100vh; height: 100dvh; overflow: hidden;
+    overscroll-behavior-y: none;
+  }
+
+  /* ===== Небо фазы суток + звёзды (за всем приложением) ===== */
+  .echo-atmo {
+    position: fixed; inset: 0; pointer-events: none; z-index: 0;
+    animation: echo-fadein 1.6s ease;
+  }
+  .echo-stars {
+    position: fixed; inset: 0; pointer-events: none; z-index: 0;
+    animation: echo-twinkle 5.5s ease-in-out infinite;
+    background-image:
+      radial-gradient(1.5px 1.5px at 12% 16%, oklch(0.95 0.02 85 / 0.9) 49%, transparent 51%),
+      radial-gradient(1px 1px at 26% 8%, oklch(0.93 0.02 85 / 0.7) 49%, transparent 51%),
+      radial-gradient(1.5px 1.5px at 41% 13%, oklch(0.95 0.01 85 / 0.8) 49%, transparent 51%),
+      radial-gradient(1px 1px at 57% 6%, oklch(0.9 0.02 85 / 0.65) 49%, transparent 51%),
+      radial-gradient(1.5px 1.5px at 68% 15%, oklch(0.95 0.02 85 / 0.85) 49%, transparent 51%),
+      radial-gradient(1px 1px at 79% 9%, oklch(0.92 0.02 85 / 0.7) 49%, transparent 51%),
+      radial-gradient(1.5px 1.5px at 90% 18%, oklch(0.94 0.02 85 / 0.8) 49%, transparent 51%),
+      radial-gradient(1px 1px at 33% 22%, oklch(0.9 0.02 85 / 0.6) 49%, transparent 51%),
+      radial-gradient(1px 1px at 63% 24%, oklch(0.92 0.01 85 / 0.65) 49%, transparent 51%),
+      radial-gradient(1px 1px at 85% 26%, oklch(0.9 0.02 85 / 0.6) 49%, transparent 51%);
+  }
+
+  /* ===== Ключевые кадры ===== */
+  @keyframes echo-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+  @keyframes echo-fadein { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes echo-rise {
+    from { opacity: 0; transform: translateY(16px) scale(0.985); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  @keyframes echo-eq {
+    0%, 100% { transform: scaleY(0.3); }
+    50% { transform: scaleY(1); }
+  }
+  @keyframes echo-twinkle {
+    0%, 100% { opacity: 0.35; }
+    50% { opacity: 0.9; }
+  }
+  @keyframes echo-halo {
+    0% { transform: scale(1); opacity: 0.5; }
+    100% { transform: scale(1.9); opacity: 0; }
+  }
+  @keyframes echo-ripple {
+    from { transform: scale(0); opacity: 0.16; }
+    to { transform: scale(1); opacity: 0; }
+  }
+  @keyframes echo-sheet-in {
+    from { transform: translateY(28px); opacity: 0.4; }
+    to { transform: translateY(0); opacity: 1; }
+  }
+
+  /* ===== Микровзаимодействия: M3 Expressive press-морфинг + ripple ===== */
+  .pressable {
+    position: relative;
+    overflow: hidden;
+    transition:
+      transform var(--echo-dur-fast) var(--spring-soft),
+      border-radius var(--echo-dur-fast) var(--spring-soft),
+      background 0.2s ease;
+  }
+  .pressable:active {
+    transform: scale(0.96);
+    border-radius: 1.1rem;
+  }
+  .echo-ripple-layer {
+    position: absolute; inset: 0; overflow: hidden;
+    border-radius: inherit; pointer-events: none;
+  }
+  .echo-ripple-dot {
+    position: absolute; border-radius: 9999px;
+    background: currentColor; transform: scale(0);
+    animation: echo-ripple 0.65s var(--spring-standard) forwards;
+  }
+
+  /* ===== Шапка ===== */
+  .app-header {
+    position: relative; z-index: 10;
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 10px 14px; padding-top: calc(10px + env(safe-area-inset-top));
+    border-bottom: 1px solid var(--border-soft);
+    background: oklch(0.16 0.014 70 / 0.72);
+    backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  }
+  .logo {
+    font-family: var(--font-serif);
+    font-size: 22px; font-weight: 700; letter-spacing: 5px; color: var(--fg);
+  }
+  .header-tools { display: flex; align-items: center; gap: 6px; }
+  .tool-pill {
+    background: oklch(0.24 0.016 70 / 0.7);
+    border: 1px solid var(--border-soft);
+    color: var(--fg); font-size: 12px; font-weight: 600;
+    padding: 6px 10px; border-radius: 20px; cursor: pointer;
+  }
+  .zone-pill { color: var(--accent); max-width: 44vw; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  /* Приветствие фазы над радаром */
+  .greeting {
+    position: relative; z-index: 5;
+    padding: 8px 16px 2px;
+    font-family: var(--font-serif);
+    font-size: 13px; line-height: 1.45; color: var(--muted-fg);
+    animation: echo-rise 0.8s var(--spring-soft) both;
+  }
+  .greeting .muted { opacity: 0.65; }
+
+  /* ===== Табы ===== */
+  .tabs {
+    display: flex; background: oklch(0.19 0.015 70 / 0.85);
+    margin: 6px 16px; border-radius: 14px; padding: 3px; z-index: 10;
+    border: 1px solid var(--border-soft);
+    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  }
+  .tab-btn {
+    flex: 1; text-align: center; padding: 8px 4px; font-size: 13px; font-weight: 600;
+    color: var(--muted-fg); border-radius: 11px; cursor: pointer;
+    transition: all var(--echo-dur-fast) var(--spring-soft);
+  }
+  .tab-btn.active {
+    background: oklch(0.26 0.02 70 / 0.9);
+    color: var(--accent);
+  }
+
+  .content-area { flex: 1; position: relative; overflow: hidden; z-index: 5; }
+  .tab-view { display: none; width: 100%; height: 100%; overflow-y: auto; }
+  .tab-view.active { display: block; }
+  canvas#sonarCanvas { width: 100%; height: 100%; display: block; }
+
+  /* ===== Радар: квадрат-сонар по центру (как в прототипе), луч, ореол, пустой эфир ===== */
+  .sonar-wrap {
+    position: relative; width: 100%; height: 100%;
+    display: grid; place-items: center; overflow: hidden;
+  }
+  .sonar-square {
+    position: relative;
+    width: min(92%, 520px);
+    aspect-ratio: 1 / 1;
+  }
+  .echo-beam {
+    position: absolute; inset: 8%; border-radius: 9999px;
+    background: conic-gradient(
+      from 0deg,
+      oklch(0.8 0.1 var(--echo-hue) / 0.14),
+      transparent 20%
+    );
+    -webkit-mask-image: radial-gradient(circle, transparent 14%, black 34%);
+    mask-image: radial-gradient(circle, transparent 14%, black 34%);
+    animation: echo-spin 16s linear infinite;
+    pointer-events: none;
+  }
+  .my-halo {
+    position: absolute; left: 50%; top: 50%;
+    width: 54px; height: 54px; margin: -27px 0 0 -27px;
+    border-radius: 9999px; border: 1px solid var(--accent-soft);
+    animation: echo-halo 3.4s var(--spring-standard) infinite;
+    pointer-events: none;
+  }
+  .empty-echo {
+    position: absolute; inset: 0; display: grid; place-items: center;
+    text-align: center; pointer-events: none;
+  }
+  .empty-echo p {
+    max-width: 250px; font-family: var(--font-serif);
+    font-size: 18px; line-height: 1.7; color: var(--muted-fg);
+    animation: echo-rise 0.8s var(--spring-soft) both;
+  }
+
+  /* Эквалайзер играющего трека */
+  .echo-eq { display: inline-flex; align-items: flex-end; gap: 2px; height: 12px; }
+  .echo-eq i {
+    display: inline-block; width: 2.5px; border-radius: 2px;
+    background: currentColor; height: 100%; transform-origin: bottom;
+    animation: echo-eq 0.9s ease-in-out infinite;
+  }
+  .echo-eq i:nth-child(2) { animation-delay: 0.22s; }
+  .echo-eq i:nth-child(3) { animation-delay: 0.44s; }
+
+  /* ===== Карточки списков ===== */
+  .card-sig {
+    background: oklch(0.2 0.016 70 / 0.78);
+    border: 1px solid var(--border-soft); border-radius: 18px; padding: 14px;
+    margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center;
+    backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+    cursor: pointer;
+    animation: echo-rise 0.55s var(--spring-soft) both;
+  }
+
+  /* ===== Нижние шторки (стекло, как в прототипе) ===== */
+  .sheet-overlay {
+    position: fixed; inset: 0; z-index: 1000;
+    background: oklch(0.1 0.01 70 / 0.6);
+    backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+    display: none; align-items: flex-end; justify-content: center;
+  }
+  .sheet-overlay.active { display: flex; }
+  .sheet-box {
+    width: 100%; max-width: 480px;
+    background: oklch(0.19 0.015 70 / 0.85);
+    backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+    border: 1px solid var(--border-soft); border-bottom: none;
+    border-radius: 2rem 2rem 0 0;
+    padding: 12px 22px calc(20px + env(safe-area-inset-bottom));
+    animation: echo-sheet-in 0.5s var(--spring-soft) both;
+  }
+  .grabber {
+    width: 40px; height: 4px; border-radius: 9999px;
+    background: oklch(0.92 0.02 80 / 0.3); margin: 0 auto 14px;
+  }
+  .sheet-title {
+    font-family: var(--font-serif); font-size: 20px; line-height: 1.35; margin: 0;
+  }
+  .sheet-sub { font-size: 13px; color: var(--muted-fg); margin: 2px 0 0; }
+
+  /* Карточка трека человека: цвет дышит его жанром (динамический цвет) */
+  .track-tint-card {
+    margin-top: 18px; border-radius: 18px; padding: 14px;
+    border: 1px solid oklch(0.75 0.09 var(--tint, 75) / 0.3);
+    background: oklch(0.28 0.05 var(--tint, 75) / 0.55);
+  }
+  .tint-label {
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--muted-fg);
+  }
+  .tint-track {
+    font-family: var(--font-serif); font-size: 22px; line-height: 1.3;
+    margin: 6px 0 8px;
+  }
+  .tint-meta { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted-fg); }
+
+  .sheet-actions { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-top: 18px; }
+  .action-btn {
+    min-height: 52px; border-radius: 16px; border: 1px solid var(--border-soft);
+    background: oklch(0.24 0.016 70 / 0.9); color: var(--fg);
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+    font-size: 11px; cursor: pointer; padding: 6px 4px;
+  }
+  .action-btn .ico { font-size: 16px; }
+  .action-btn.primary { background: var(--accent-soft); border-color: var(--accent-soft); color: var(--accent); }
+  .action-btn[disabled] { opacity: 0.55; cursor: default; }
+
+  .symbol-row { display: flex; justify-content: space-between; margin-top: 14px; }
+  .symbol-btn {
+    width: 40px; height: 40px; border-radius: 9999px; border: 1px solid var(--border-soft);
+    background: oklch(0.24 0.016 70 / 0.9); font-size: 17px; cursor: pointer;
+    display: grid; place-items: center; color: var(--fg);
+  }
+  .impulse-note {
+    margin: 12px 0 0; text-align: center; font-size: 12px; color: var(--muted-fg);
+  }
+
+  /* Список зон в шторке */
+  .zone-list { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; }
+  .zone-item {
+    text-align: left; padding: 13px 14px; border-radius: 14px;
+    border: 1px solid var(--border-soft);
+    background: oklch(0.22 0.016 70 / 0.85); color: var(--fg);
+    font-size: 14px; font-weight: 600; cursor: pointer;
+  }
+  .zone-item.current { border-color: var(--accent-soft); color: var(--accent); background: var(--accent-soft); }
+
+  /* Форма тайника */
+  .sheet-input, .sheet-textarea {
+    width: 100%; margin-top: 8px; padding: 12px 14px; border-radius: 14px;
+    border: 1px solid var(--border-soft);
+    background: oklch(0.22 0.016 70 / 0.9); color: var(--fg);
+    font-size: 14px; font-family: var(--font-sans);
+  }
+  .sheet-textarea { min-height: 84px; resize: vertical; }
+  .submit-btn {
+    width: 100%; margin-top: 14px; padding: 13px; border-radius: 16px; border: none;
+    background: var(--accent-soft); color: var(--accent);
+    font-weight: 700; font-size: 14px; cursor: pointer;
+  }
+
+  /* ===== Тосты ===== */
+  .toast-banner {
+    position: fixed; top: calc(14px + env(safe-area-inset-top)); left: 50%;
+    transform: translateX(-50%) translateY(-100px);
+    background: oklch(0.2 0.015 70 / 0.92);
+    border: 1px solid var(--accent-soft); border-radius: 16px;
+    padding: 10px 18px; display: flex; align-items: center; gap: 10px; z-index: 2000;
+    box-shadow: 0 10px 30px oklch(0.8 0.1 var(--echo-hue) / 0.2); opacity: 0; pointer-events: none;
+    transition: all 0.35s var(--spring-soft);
+    backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  }
+  .toast-banner.visible { transform: translateX(-50%) translateY(0); opacity: 1; pointer-events: auto; }
+
+  /* ===== Карта ===== */
+  .leaflet-container { background: var(--bg-hex) !important; }
+  .leaflet-tile {
+    filter: brightness(0.6) invert(1) contrast(3) hue-rotate(200deg) saturate(0.3) brightness(0.7) !important;
+  }
+  .leaflet-bar a { background-color: #1E293B !important; color: #38BDF8 !important; border-bottom: 1px solid #334155 !important; }
+  .leaflet-bar a:hover { background-color: #334155 !important; }
+
+  /* ===== Бережность к vestibular-настройкам ===== */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+</style>
+</head>
+<body>
+  <!-- Небо фазы суток (заполняется JS) + звёзды ночью -->
+  <div id="atmoLayer" class="echo-atmo"></div>
+  <div id="starsLayer" class="echo-stars" style="display:none;"></div>
+
+  <div id="toastNotification" class="toast-banner">
+    <span id="toastSymbol" style="font-size: 22px;">✦</span>
+    <span id="toastText" style="font-size: 13px; font-weight: 600;">Импульс принят</span>
+  </div>
+
+  <div class="app-header">
+    <div class="logo">ЭХО</div>
+    <div class="header-tools">
+      <button class="tool-pill pressable" id="soundBtn" title="Звук радара">🔊</button>
+      <button class="tool-pill pressable" id="tokenBtn" title="Токен туннеля">🔑</button>
+      <button class="tool-pill pressable" id="phaseBtn" title="Фаза суток">🌆 Сумерки</button>
+      <button class="tool-pill pressable zone-pill" id="zoneBtn">Вечерняя улица ▾</button>
+    </div>
+  </div>
+
+  <div class="greeting" id="greetingLine" aria-live="polite">Настраиваемся на город…</div>
+
+  <div class="tabs">
+    <div class="tab-btn active pressable" onclick="switchTab(0)">Сонар</div>
+    <div class="tab-btn pressable" onclick="switchTab(1)">Карта города</div>
+    <div class="tab-btn pressable" onclick="switchTab(2)" id="tabAirBtn">Эфир (0)</div>
+    <div class="tab-btn pressable" onclick="switchTab(3)">Тайники</div>
+  </div>
+
+  <div class="content-area">
+    <div class="tab-view active" id="tab0" style="padding:0; overflow:hidden;">
+      <div class="sonar-wrap">
+        <div class="sonar-square">
+          <canvas id="sonarCanvas"></canvas>
+          <div class="echo-beam" aria-hidden="true"></div>
+          <div class="my-halo" aria-hidden="true"></div>
+          <div class="empty-echo" id="emptyEcho" style="display:none;">
+            <p>Сейчас вокруг тихо.<br>Эхо любит тишину —<br>оно всегда возвращается.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="tab-view" id="tab1" style="padding:0;">
+      <div id="mapContainer"></div>
+    </div>
+
+    <div class="tab-view" id="tab2" style="padding:14px 16px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+        <span style="font-weight:bold; color:var(--accent); font-family:var(--font-serif);">Музыкальные волны вокруг</span>
+        <button class="tool-pill pressable" onclick="copyEveningPlaylist()">✦ Плейлист вечера</button>
+      </div>
+      <div id="signalsFeed"></div>
+    </div>
+
+    <div class="tab-view" id="tab3" style="padding:14px 16px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+        <span style="font-weight:bold; color:#FBBF24; font-family:var(--font-serif);">Капсулы времени рядом</span>
+        <button class="tool-pill pressable" onclick="openDropSheet()">+ Оставить тайник</button>
+      </div>
+      <div id="capsulesFeed"></div>
+    </div>
+  </div>
+
+  <!-- Шторка: паспорт слушателя -->
+  <div class="sheet-overlay" id="passportSheet" onclick="closeSheet('passportSheet', event)">
+    <div class="sheet-box" onclick="event.stopPropagation()">
+      <div class="grabber" aria-hidden="true"></div>
+      <div style="display:flex; align-items:center; gap:14px;">
+        <div id="psAvatar" style="width:58px; height:58px; border-radius:9999px; flex:none;
+             border:2px solid var(--accent-soft); background:radial-gradient(circle at 40% 35%, oklch(0.6 0.09 var(--tint,75)), oklch(0.22 0.02 70));"></div>
+        <div style="min-width:0;">
+          <p class="sheet-title" id="psPersona">«…»</p>
+          <p class="sheet-sub" id="psMood"></p>
+        </div>
+      </div>
+
+      <div class="track-tint-card" id="psTrackCard">
+        <div class="tint-label">Сейчас слушает</div>
+        <div class="tint-track" id="psTrack">—</div>
+        <div class="tint-meta">
+          <span class="echo-eq" aria-hidden="true"><i></i><i></i><i></i></span>
+          <span id="psAge"></span>
+        </div>
+      </div>
+
+      <div style="margin-top:12px; display:flex; flex-wrap:wrap; gap:6px 14px; font-size:13px; color:var(--muted-fg);">
+        <span id="psDistance"></span>
+        <span aria-hidden="true">·</span>
+        <span id="psCompat"></span>
+        <span aria-hidden="true">·</span>
+        <span id="psZone"></span>
+      </div>
+      <p style="margin:10px 0 0; font-size:13px; font-style:italic; color:var(--muted-fg);" id="psObs"></p>
+
+      <div class="symbol-row" id="psSymbols">
+        <button class="symbol-btn pressable" onclick="sendReaction('🦇')">🦇</button>
+        <button class="symbol-btn pressable" onclick="sendReaction('🌑')">🌑</button>
+        <button class="symbol-btn pressable" onclick="sendReaction('🌊')">🌊</button>
+        <button class="symbol-btn pressable" onclick="sendReaction('⚔')">⚔</button>
+        <button class="symbol-btn pressable" onclick="sendReaction('🌲')">🌲</button>
+        <button class="symbol-btn pressable" onclick="sendReaction('🎼')">🎼</button>
+        <button class="symbol-btn pressable" onclick="sendReaction('☁')">☁</button>
+      </div>
+
+      <div class="sheet-actions">
+        <button class="action-btn pressable" id="psSaveBtn" onclick="saveCurrentTrack()">
+          <span class="ico">🔖</span><span>Сохранить трек</span>
+        </button>
+        <a class="action-btn pressable primary" id="psListen" target="_blank" rel="noopener"
+           style="text-decoration:none;">
+          <span class="ico">▶</span><span>Открыть в плеере</span>
+        </a>
+        <button class="action-btn pressable" onclick="closeSheet('passportSheet')">
+          <span class="ico">✕</span><span>Закрыть</span>
+        </button>
+      </div>
+      <p class="impulse-note">Импульс — тихий музыкальный кивок. Без лайков, рейтингов и ожиданий ответа.</p>
+    </div>
+  </div>
+
+  <!-- Шторка: выбор зоны -->
+  <div class="sheet-overlay" id="zoneSheet" onclick="closeSheet('zoneSheet', event)">
+    <div class="sheet-box" onclick="event.stopPropagation()">
+      <div class="grabber" aria-hidden="true"></div>
+      <p class="sheet-title">Где вы сейчас?</p>
+      <p class="sheet-sub">Зона задаёт атмосферу вашего сигнала на сонаре.</p>
+      <div class="zone-list" id="zoneList"></div>
+    </div>
+  </div>
+
+  <!-- Шторка: оставить тайник -->
+  <div class="sheet-overlay" id="dropSheet" onclick="closeSheet('dropSheet', event)">
+    <div class="sheet-box" onclick="event.stopPropagation()">
+      <div class="grabber" aria-hidden="true"></div>
+      <p class="sheet-title">Тайник в зоне «<span id="dropZoneName">…</span>»</p>
+      <p class="sheet-sub">Анонимное послание для того, кто найдёт этот трек.</p>
+      <input class="sheet-input" id="dropArtist" placeholder="Артист" value="Sirotkin">
+      <input class="sheet-input" id="dropTitle" placeholder="Трек" value="Август">
+      <textarea class="sheet-textarea" id="dropMsg" placeholder="Слушай этот трек, когда…"></textarea>
+      <button class="submit-btn pressable" onclick="submitCapsule()">⏳ Спрятать тайник</button>
+    </div>
+  </div>
+
+  <!-- Шторка: токен публичного туннеля (только для этого браузера) -->
+  <div class="sheet-overlay" id="tokenSheet" onclick="closeSheet('tokenSheet', event)">
+    <div class="sheet-box" onclick="event.stopPropagation()">
+      <div class="grabber" aria-hidden="true"></div>
+      <p class="sheet-title">Токен туннеля</p>
+      <p class="sheet-sub">Нужен только если сервер запущен с ECHO_API_TOKEN. Хранится локально, в HTML не попадает.</p>
+      <input class="sheet-input" id="tokenInput" type="password" placeholder="необязательно" autocomplete="off">
+      <button class="submit-btn pressable" onclick="saveToken()">🔑 Сохранить</button>
+    </div>
+  </div>
+
+<script>
+/* ================== БАЗА ================== */
+let currentZone = "Вечерняя улица";
+const ZONES = ["Вечерняя улица", "Сретенка · Камерные бары", "Парк Горького · Набережная", "Покровка · Ночные кофейни", "Северный лесопарк"];
+const ZONE_COORDS = {
+  "Вечерняя улица": [55.7602, 37.6185],
+  "Сретенка · Камерные бары": [55.7685, 37.6324],
+  "Парк Горького · Набережная": [55.7294, 37.6022],
+  "Покровка · Ночные кофейни": [55.7588, 37.6482],
+  "Северный лесопарк": [55.8305, 37.5310]
+};
+let appState = { signals: [], capsules: [], cityZones: [] };
+let selectedSignal = null;
+let map = null;
+let mapFogGroup = null;
+let mapLayersGroup = null;
+let lastKnownBannerId = 0;
+let toastTimeout = null;
+let knownSignalIds = null; // для пинга новых сигналов
+
+const CLIENT_ID = (() => {
+  let id = localStorage.getItem('echo_client_id');
+  if (!id) { id = 'pwa_' + Math.random().toString(36).slice(2, 10); localStorage.setItem('echo_client_id', id); }
+  return id;
+})();
+
+function apiHeaders() {
+  const h = { 'Content-Type': 'application/json' };
+  // Секрет хранится только в этом браузере: сервер больше не вставляет его в HTML.
+  let token = '';
+  try { token = localStorage.getItem('echo-api-key') || ''; } catch (e) {}
+  if (token) h['X-API-Key'] = token;
+  return h;
+}
+
+// Экранирование всех динамических строк перед вставкой в HTML
+function esc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+/* ================== ЗВУК РАДАРА (WebAudio, без файлов) ==================
+   Портировано из прототипа: пинг новых сигналов (громче — ближе),
+   тёплый аккорд сохранения, глухой удар импульса, тик выбора. */
+class EchoSound {
+  constructor() {
+    this.ctx = null; this.master = null; this.lastPing = 0;
+    try { this.enabled = localStorage.getItem("echo-sound-v1") !== "off"; }
+    catch (e) { this.enabled = true; }
+  }
+  setEnabled(v) {
+    this.enabled = v;
+    try { localStorage.setItem("echo-sound-v1", v ? "on" : "off"); } catch (e) {}
+    if (!v && this.ctx) this.ctx.suspend().catch(() => {});
+  }
+  unlock() {
+    if (!this.enabled) return;
+    try {
+      const Ctor = window.AudioContext || window.webkitAudioContext;
+      if (!Ctor) return;
+      if (!this.ctx) {
+        this.ctx = new Ctor();
+        this.master = this.ctx.createGain();
+        this.master.gain.value = 0.6;
+        this.master.connect(this.ctx.destination);
+      }
+      if (this.ctx.state === "suspended") this.ctx.resume().catch(() => {});
+    } catch (e) { /* без звука тоже можно жить */ }
+  }
+  ready() { return this.enabled && this.ctx && this.master && this.ctx.state === "running"; }
+  tone(freq, at, dur, peak, type, glideTo) {
+    if (!this.ctx || !this.master) return;
+    const o = this.ctx.createOscillator();
+    const g = this.ctx.createGain();
+    o.type = type || "sine";
+    o.frequency.setValueAtTime(freq, at);
+    if (glideTo && glideTo > 0) o.frequency.exponentialRampToValueAtTime(glideTo, at + dur);
+    g.gain.setValueAtTime(0.0001, at);
+    g.gain.exponentialRampToValueAtTime(peak, at + 0.014);
+    g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
+    o.connect(g); g.connect(this.master);
+    o.start(at); o.stop(at + dur + 0.06);
+  }
+  ping(prox) {
+    if (!this.ready()) return;
+    const now = this.ctx.currentTime;
+    if (now - this.lastPing < 1.2) return; // без очередей пингов
+    this.lastPing = now;
+    const p = Math.max(0, Math.min(1, prox || 0.5));
+    const peak = 0.028 + 0.1 * p;
+    this.tone(920, now, 0.5, peak, "sine", 620);
+    this.tone(1840, now, 0.16, peak * 0.22, "sine", 1240);
+  }
+  chime() {
+    if (!this.ready()) return;
+    const now = this.ctx.currentTime;
+    this.tone(523.25, now, 0.34, 0.06);
+    this.tone(784, now + 0.09, 0.5, 0.05);
+    this.tone(1046.5, now + 0.16, 0.4, 0.028);
+  }
+  thump() {
+    if (!this.ready()) return;
+    const now = this.ctx.currentTime;
+    this.tone(120, now, 0.22, 0.17, "sine", 55);
+    this.tone(118, now + 0.26, 0.2, 0.11, "sine", 52);
+  }
+  tick() {
+    if (!this.ready()) return;
+    const now = this.ctx.currentTime;
+    this.tone(1150, now, 0.05, 0.035, "triangle", 900);
+  }
+}
+const sound = new EchoSound();
+
+// Разблокировка аудио первым касанием (политика автозапуска)
+document.addEventListener('pointerdown', () => sound.unlock(), { once: false, passive: true });
+
+// Вибро-отклик — работает в Chrome на Android
+function haptic(pattern) {
+  if (navigator.vibrate) { try { navigator.vibrate(pattern); } catch (e) {} }
+}
+
+/* ================== RIPPLE ================== */
+document.addEventListener('pointerdown', (e) => {
+  const target = e.target.closest('.pressable');
+  if (!target) return;
+  const layer = document.createElement('span');
+  layer.className = 'echo-ripple-layer';
+  const dot = document.createElement('span');
+  dot.className = 'echo-ripple-dot';
+  const rect = target.getBoundingClientRect();
+  const size = Math.max(rect.width, rect.height) * 1.6;
+  dot.style.width = dot.style.height = size + 'px';
+  dot.style.left = (e.clientX - rect.left - size / 2) + 'px';
+  dot.style.top = (e.clientY - rect.top - size / 2) + 'px';
+  layer.appendChild(dot);
+  target.appendChild(layer);
+  setTimeout(() => layer.remove(), 700);
+}, { passive: true });
+
+/* ================== ФАЗЫ СУТОК ================== */
+const PHASES = {
+  dawn: { label: "Рассвет", icon: "🌅", greeting: "Город просыпается — ранние эхо самые чистые", glowHue: 30, glowStrength: 0.1, stars: false },
+  day: { label: "День", icon: "☀️", greeting: "День громкий: музыка прячется в переулках", glowHue: 90, glowStrength: 0.07, stars: false },
+  dusk: { label: "Сумерки", icon: "🌆", greeting: "Сумерки — лучшее время слушать город", glowHue: 55, glowStrength: 0.12, stars: false },
+  night: { label: "Ночь", icon: "🌙", greeting: "Ночь несёт звук дальше обычного", glowHue: 280, glowStrength: 0.1, stars: true }
+};
+const PHASE_ORDER = ["auto", "dawn", "day", "dusk", "night"];
+let phaseMode = localStorage.getItem("echo-phase-v1") || "auto";
+if (!PHASE_ORDER.includes(phaseMode)) phaseMode = "auto";
+
+function phaseForHour(hour) {
+  if (hour >= 5 && hour < 9) return "dawn";
+  if (hour >= 9 && hour < 17) return "day";
+  if (hour >= 17 && hour < 21) return "dusk";
+  return "night";
+}
+function currentPhaseKey() {
+  return phaseMode === "auto" ? phaseForHour(new Date().getHours()) : phaseMode;
+}
+function glowFor(key) {
+  const p = PHASES[key];
+  const h = p.glowHue, s = p.glowStrength;
+  return [
+    `radial-gradient(900px 620px at 50% 20%, oklch(0.78 0.085 ${h} / ${s}), transparent 70%)`,
+    `radial-gradient(1300px 480px at 50% 112%, oklch(0.6 0.07 ${(h + 340) % 360} / ${(s * 0.9).toFixed(3)}), transparent 75%)`
+  ].join(", ");
+}
+function applyPhase() {
+  const key = currentPhaseKey();
+  const p = PHASES[key];
+  const atmo = document.getElementById('atmoLayer');
+  atmo.style.backgroundImage = glowFor(key);
+  atmo.style.animation = 'none'; void atmo.offsetWidth; atmo.style.animation = 'echo-fadein 1.6s ease';
+  document.getElementById('starsLayer').style.display = p.stars ? 'block' : 'none';
+  const modeMark = phaseMode === 'auto' ? ' · авто' : '';
+  document.getElementById('phaseBtn').textContent = `${p.icon} ${p.label}${modeMark}`;
+  renderGreeting();
+}
+function cyclePhase() {
+  const i = PHASE_ORDER.indexOf(phaseMode);
+  phaseMode = PHASE_ORDER[(i + 1) % PHASE_ORDER.length];
+  localStorage.setItem("echo-phase-v1", phaseMode);
+  sound.tick(); haptic(8);
+  applyPhase();
+}
+document.getElementById('phaseBtn').addEventListener('click', cyclePhase);
+setInterval(applyPhase, 60000); // фаза может смениться сама
+
+function signalsWord(n) {
+  const m10 = n % 10, m100 = n % 100;
+  if (m10 === 1 && m100 !== 11) return "сигнал";
+  if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return "сигнала";
+  return "сигналов";
+}
+function renderGreeting() {
+  const key = currentPhaseKey();
+  const n = (appState.signals || []).length;
+  const line = document.getElementById('greetingLine');
+  if (n > 0) {
+    line.innerHTML = `${esc(PHASES[key].greeting)} <span class="muted">· рядом ${n} ${signalsWord(n)}</span>`;
+  } else {
+    line.textContent = PHASES[key].greeting;
+  }
+}
+
+/* ================== ДИНАМИЧЕСКИЙ ЦВЕТ (Material You) ==================
+   Оттенок интерфейса растёт из моего текущего трека (цвет семьи настроения),
+   тишина — тёплая лампа фонаря (75). */
+function hexToHue(hexLong) {
+  const v = Number(hexLong) & 0xFFFFFF;
+  const r = ((v >> 16) & 255) / 255, g = ((v >> 8) & 255) / 255, b = (v & 255) / 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  if (max === min) return 75;
+  let h;
+  const d = max - min;
+  if (max === r) h = ((g - b) / d) % 6;
+  else if (max === g) h = (b - r) / d + 2;
+  else h = (r - g) / d + 4;
+  h = Math.round(h * 60);
+  return (h + 360) % 360;
+}
+function applyDynamicHue() {
+  let hue = 75; // тишина — тёплая лампа
+  if (appState.myColorHex && Number(appState.myColorHex) > 0 && appState.myCuratedPersona) {
+    hue = hexToHue(appState.myColorHex);
+  }
+  document.documentElement.style.setProperty("--echo-hue", String(hue));
+}
+
+/* ================== ТОСТЫ ================== */
+function showToast(text, symbol) {
+  const toast = document.getElementById('toastNotification');
+  document.getElementById('toastSymbol').innerText = symbol || '✦';
+  document.getElementById('toastText').innerText = text;
+  toast.classList.add('visible');
+  if (toastTimeout) clearTimeout(toastTimeout);
+  toastTimeout = setTimeout(() => toast.classList.remove('visible'), 3200);
+}
+
+/* ================== ЗВУК-ПЕРЕКЛЮЧАТЕЛЬ ================== */
+const soundBtn = document.getElementById('soundBtn');
+function renderSoundBtn() { soundBtn.textContent = sound.enabled ? '🔊' : '🔇'; }
+renderSoundBtn();
+soundBtn.addEventListener('click', () => {
+  sound.setEnabled(!sound.enabled);
+  renderSoundBtn();
+  if (sound.enabled) { sound.unlock(); sound.tick(); }
+});
+
+/* ================== ШТОРКИ ================== */
+function openSheet(id) { document.getElementById(id).classList.add('active'); }
+function closeSheet(id, e) { if (!e || e.target === e.currentTarget) document.getElementById(id).classList.remove('active'); }
+function closeAllSheets() {
+  document.querySelectorAll('.sheet-overlay').forEach(s => s.classList.remove('active'));
+}
+
+/* Зона */
+function openZoneSheet() {
+  const list = document.getElementById('zoneList');
+  list.innerHTML = ZONES.map(z => `
+    <button class="zone-item pressable ${z === currentZone ? 'current' : ''}" onclick="pickZone('${esc(z).replace(/'/g, "\\'")}')">
+      ${esc(z)}${z === currentZone ? ' ✓' : ''}
+    </button>`).join('');
+  openSheet('zoneSheet');
+}
+function pickZone(z) {
+  currentZone = z;
+  document.getElementById('zoneBtn').textContent = z + ' ▾';
+  sound.tick(); haptic(8);
+  closeAllSheets();
+  if (map) {
+    const coords = ZONE_COORDS[z] || [55.7558, 37.6176];
+    map.flyTo(coords, 14, { duration: 1.2 });
+  }
+}
+document.getElementById('zoneBtn').addEventListener('click', openZoneSheet);
+
+/* Токен туннеля */
+function openTokenSheet() {
+  let saved = '';
+  try { saved = localStorage.getItem('echo-api-key') || ''; } catch (e) {}
+  document.getElementById('tokenInput').value = saved;
+  openSheet('tokenSheet');
+}
+function saveToken() {
+  const value = document.getElementById('tokenInput').value.trim();
+  try {
+    if (value) localStorage.setItem('echo-api-key', value);
+    else localStorage.removeItem('echo-api-key');
+  } catch (e) {}
+  closeAllSheets();
+  showToast(value ? 'Токен сохранён в этом браузере' : 'Токен удалён', '🔑');
+  fetchState();
+}
+document.getElementById('tokenBtn').addEventListener('click', openTokenSheet);
+
+/* Тайник */
+function openDropSheet() {
+  document.getElementById('dropZoneName').textContent = currentZone;
+  openSheet('dropSheet');
+}
+async function submitCapsule() {
+  const msg = document.getElementById('dropMsg').value.trim();
+  if (!msg) { showToast("Напишите послание для тайника", "⏳"); return; }
+  const artist = document.getElementById('dropArtist').value.trim() || 'Sirotkin';
+  const title = document.getElementById('dropTitle').value.trim() || 'Август';
+  try {
+    await fetch('/api/drop_capsule', {
+      method: 'POST', headers: apiHeaders(),
+      body: JSON.stringify({ creatorId: CLIENT_ID, artist, title, zoneName: currentZone, secretMessage: msg })
+    });
+    closeAllSheets();
+    document.getElementById('dropMsg').value = '';
+    showToast("Тайник спрятан в зоне " + currentZone, "⏳");
+    haptic(14);
+    fetchState();
+  } catch (e) { showToast("Сервер не отвечает", "⚠"); }
+}
+
+/* ================== СОНАР ================== */
+const canvas = document.getElementById('sonarCanvas');
+const ctx = canvas.getContext('2d');
+let sweepAngle = 0;
+const RING_LABELS = ["170 м", "330 м", "500 м"];
+
+function resizeCanvas() {
+  canvas.width = canvas.parentElement.clientWidth * window.devicePixelRatio;
+  canvas.height = canvas.parentElement.clientHeight * window.devicePixelRatio;
+}
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
+
+function copyEveningPlaylist() {
+  if (!appState.signals || appState.signals.length === 0) {
+    showToast("В эфире пока нет треков", "✦");
+    return;
+  }
+  const lines = appState.signals.map((s, i) => `${i + 1}. ${s.artist} — ${s.title} (${s.personaTitle})`);
+  const text = "✦ Плейлист моего вечера • ЭХО ✦\n\n" + lines.join("\n");
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(text)
+      .then(() => showToast("Плейлист вечера скопирован в буфер обмена!", "✦"))
+      .catch(() => showToast("Буфер обмена недоступен — откройте страницу по HTTPS", "⚠"));
+  } else {
+    showToast("Буфер обмена недоступен в этом браузере", "⚠");
+  }
+}
+
+function initNightMap() {
+  if (map) return;
+  map = L.map('mapContainer', { zoomControl: true, attributionControl: false }).setView([55.7558, 37.6176], 13);
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
+  mapFogGroup = L.layerGroup().addTo(map);
+  mapLayersGroup = L.layerGroup().addTo(map);
+}
+
+function switchTab(idx) {
+  document.querySelectorAll('.tab-btn').forEach((b, i) => b.classList.toggle('active', i === idx));
+  document.querySelectorAll('.tab-view').forEach((v, i) => v.classList.toggle('active', i === idx));
+  sound.tick();
+  if (idx === 1) {
+    initNightMap();
+    setTimeout(() => { map.invalidateSize(); renderMapHalos(); }, 200);
+  }
+}
+
+async function fetchState() {
+  if (document.hidden) return; // спокойный эфир: вкладка скрыта — не дёргаем сеть
+  try {
+    const res = await fetch('/api/state?deviceId=' + encodeURIComponent(CLIENT_ID), { headers: apiHeaders() });
+    if (!res.ok) { showToast(res.status === 401 ? 'Нужен токен туннеля (🔑)' : 'Эфир недоступен', '⚠'); return; }
+    appState = await res.json();
+    applyDynamicHue();
+    renderFeed();
+    renderGreeting();
+
+    // Пинг новых сигналов: громкость зависит от близости
+    const ids = new Set(appState.signals.map(s => s.id));
+    if (knownSignalIds !== null) {
+      for (const s of appState.signals) {
+        if (!knownSignalIds.has(s.id)) {
+          sound.ping(1 - Math.min(1, Math.max(0, s.distanceRatio || 0.5)));
+          break; // один пинг за раз — эфир не превращается в очередь
+        }
+      }
+    }
+    knownSignalIds = ids;
+
+    if (appState.incomingBanner && appState.incomingBanner.id !== lastKnownBannerId) {
+      lastKnownBannerId = appState.incomingBanner.id;
+      if (appState.incomingBanner.senderId !== CLIENT_ID) {
+        showToast(appState.incomingBanner.message, appState.incomingBanner.symbol);
+        haptic([10, 60, 10]);
+      }
+    }
+
+    if (map && document.getElementById('tab1').classList.contains('active')) renderMapHalos();
+  } catch (e) { /* тихий эфир: сеть может шуршать */ }
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden) fetchState(); });
+
+// Тайники привязаны к крупной зоне, а не к координатам человека.
+function zoneCoords(name) {
+  return ZONE_COORDS[name] || [55.7558, 37.6176];
+}
+
+function renderMapHalos() {
+  if (!mapLayersGroup) return;
+  mapLayersGroup.clearLayers();
+  mapFogGroup.clearLayers();
+  const nowSec = Date.now() / 1000;
+
+  if (appState.cityZones) {
+    appState.cityZones.forEach(z => {
+      if (!z.lat || !z.lon) return;
+      const hex = '#' + (z.fogColorHex & 0xFFFFFF).toString(16).padStart(6, '0');
+      const fog = L.circle([z.lat, z.lon], {
+        radius: z.fogRadius || 500, color: hex, weight: 0,
+        fillColor: hex, fillOpacity: 0.08
+      });
+      fog.bindTooltip(`<b>${esc(z.placeName)}</b><br>Вайб: ${esc(z.dominantVibe)}`, { className: 'fog-tooltip', sticky: true });
+      mapFogGroup.addLayer(fog);
+    });
+  }
+
+  // Персональные маркеры слушателей убраны: карта показывает только
+  // агрегированный «музыкальный туман» зон (выше) и тайники по зонам.
+  // Конституция запрещает координаты и историю перемещений человека.
+
+  appState.capsules.forEach(c => {
+    const isVen = c.isVenue;
+    const capColor = isVen ? '#38BDF8' : '#F59E0B';
+    const fillColor = isVen ? '#0284C7' : '#FBBF24';
+    const capCircle = L.circle(zoneCoords(c.zoneName), {
+      radius: isVen ? 150 : 110, color: capColor, weight: isVen ? 1.8 : 1.2,
+      dashArray: isVen ? null : '4, 4', fillColor, fillOpacity: isVen ? 0.28 : 0.22
+    });
+    const capCore = L.circleMarker(zoneCoords(c.zoneName), {
+      radius: isVen ? 8 : 6, color: '#FFF', weight: 1.5, fillColor: capColor, fillOpacity: 1
+    });
+    const venueBadge = isVen ? `<span style="background:#0C4A6E; color:#38BDF8; padding:2px 6px; border-radius:4px; font-size:11px;">🏛️ ${esc(c.venueName || 'Локация')}</span><br>` : '';
+    capCircle.bindPopup(`${venueBadge}<b>⏳ ${esc(c.artist)} — ${esc(c.title)}</b><br><i>«${esc(c.secretMessage)}»</i>`);
+    mapLayersGroup.addLayer(capCircle);
+    mapLayersGroup.addLayer(capCore);
+  });
+}
+
+function renderFeed() {
+  document.getElementById('tabAirBtn').innerText = `Эфир (${appState.signals.length})`;
+  document.getElementById('signalsFeed').innerHTML = appState.signals.map((s, i) => `
+    <div class="card-sig pressable" data-signal-id="${esc(s.id)}" style="opacity:${s.isGhost ? 0.65 : 1.0}; animation-delay:${Math.min(i, 8) * 0.05}s">
+      <div>
+        <div style="color:#${(s.colorHex & 0xFFFFFF).toString(16).padStart(6, '0')}; font-size:12px; font-weight:bold;">
+          ${esc(s.personaTitle)} ${s.isGhost ? '<span style="font-size:10px; color:var(--muted-fg);">• Призрачный след</span>' : ''}
+        </div>
+        <div style="font-weight:bold; font-size:14px; font-family:var(--font-serif);">${esc(s.artist)} — ${esc(s.title)}</div>
+        <div style="color:var(--muted-fg); font-size:11px;">${esc(s.moodLabel)} • ${esc(s.zoneName)}</div>
+      </div>
+      <div style="font-size:20px; color:var(--accent);">→</div>
+    </div>
+  `).join('');
+
+  document.getElementById('capsulesFeed').innerHTML = appState.capsules.map(c => `
+    <div class="card-sig" style="border-color:${c.isVenue ? '#38BDF8' : '#F59E0B'}">
+      <div>
+        <div style="color:${c.isVenue ? '#38BDF8' : '#FBBF24'}; font-size:12px; font-weight:bold;">
+          ${c.isVenue ? '🏛️ ' + esc(c.venueName || 'Тайник заведения') : '⏳ ' + esc(c.personaTitle)} • ${esc(c.zoneName)}
+        </div>
+        <div style="font-weight:bold; font-size:14px; font-family:var(--font-serif);">${esc(c.artist)} — ${esc(c.title)}</div>
+        <div style="font-size:12px; font-style:italic;">«${esc(c.secretMessage)}»</div>
+      </div>
+      <a href="https://music.yandex.ru/search?text=${encodeURIComponent(c.artist + ' ' + c.title)}" target="_blank" rel="noopener" style="color:${c.isVenue ? '#38BDF8' : '#FBBF24'}; text-decoration:none; font-size:18px;">▶</a>
+    </div>
+  `).join('');
+
+  document.getElementById('emptyEcho').style.display =
+    (document.getElementById('tab0').classList.contains('active') && appState.signals.length === 0) ? 'grid' : 'none';
+}
+
+// Данные уходят в data-атрибут, а не в inline-обработчик: HTML-экранирование
+// не защищает JS-контекст, потому что браузер декодирует &#39; до передачи в JS.
+document.getElementById('signalsFeed').addEventListener('click', (e) => {
+  const card = e.target.closest('[data-signal-id]');
+  if (card) openPassportById(card.dataset.signalId);
+});
+
+/* ================== ПАСПОРТ СЛУШАТЕЛЯ (нижняя шторка) ================== */
+function savedKey(artist, title) {
+  try {
+    const saved = JSON.parse(localStorage.getItem('echo-saved-v1') || '[]');
+    return saved.some(x => x.artist === artist && x.title === title);
+  } catch (e) { return false; }
+}
+function openPassportById(id) {
+  const sig = appState.signals.find(s => s.id === id);
+  if (!sig) return;
+  openPassport(sig);
+}
+function openPassport(sig) {
+  selectedSignal = sig;
+  const hue = hexToHue(sig.colorHex);
+  const sheet = document.getElementById('passportSheet');
+  sheet.style.setProperty('--tint', String(hue));
+
+  document.getElementById('psPersona').textContent = `«${sig.personaTitle}»`;
+  document.getElementById('psMood').textContent = sig.moodLabel || '';
+  document.getElementById('psTrack').textContent = `${sig.artist} — ${sig.title}`;
+  const age = sig.ageMinutes || 0;
+  document.getElementById('psAge').textContent = sig.isGhost
+    ? `призрачный след · звучал ${age} мин назад`
+    : `живёт в эфире ${age} мин`;
+  const bucketText = { near: 'рядом', medium: 'неподалёку', far: 'далеко' }[sig.distanceBucket] || 'неподалёку';
+  document.getElementById('psDistance').textContent = bucketText;
+  document.getElementById('psCompat').textContent = sig.moodLabel || 'вечерний эфир';
+  document.getElementById('psZone').textContent = sig.zoneName;
+  document.getElementById('psObs').textContent = `«${sig.personaObservation}»`;
+  const av = document.getElementById('psAvatar');
+  av.style.setProperty('--tint', String(hue));
+  av.style.borderColor = `oklch(0.75 0.09 ${hue} / 0.5)`;
+  av.style.background = `radial-gradient(circle at 40% 35%, oklch(0.6 0.09 ${hue}), oklch(0.22 0.02 70))`;
+  document.getElementById('psListen').href =
+    `https://music.yandex.ru/search?text=${encodeURIComponent(sig.artist + ' ' + sig.title)}`;
+
+  const saveBtn = document.getElementById('psSaveBtn');
+  const isSaved = savedKey(sig.artist, sig.title);
+  saveBtn.disabled = isSaved;
+  saveBtn.innerHTML = isSaved
+    ? '<span class="ico">✓</span><span>Сохранено</span>'
+    : '<span class="ico">🔖</span><span>Сохранить трек</span>';
+
+  openSheet('passportSheet');
+  // «Повторная встреча» не считается по каждому открытию карточки.
+}
+function saveCurrentTrack() {
+  if (!selectedSignal) return;
+  try {
+    const saved = JSON.parse(localStorage.getItem('echo-saved-v1') || '[]');
+    saved.push({ artist: selectedSignal.artist, title: selectedSignal.title, persona: selectedSignal.personaTitle, savedAt: Date.now() });
+    localStorage.setItem('echo-saved-v1', JSON.stringify(saved));
+  } catch (e) {}
+  sound.chime(); haptic(12);
+  const btn = document.getElementById('psSaveBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="ico">✓</span><span>Сохранено</span>';
+  showToast("Трек сохранён в ваш дневник", "🔖");
+}
+async function sendReaction(symbol) {
+  if (!selectedSignal) return;
+  const target = selectedSignal;
+  sound.thump(); haptic([8, 40, 8]);
+  try {
+    await fetch('/api/react', {
+      method: 'POST', headers: apiHeaders(),
+      body: JSON.stringify({ targetId: target.id, senderId: CLIENT_ID, symbol: symbol })
+    });
+    showToast(`Отклик ${symbol} отправлен в эфир`, symbol);
+    fetchState();
+  } catch (e) { showToast("Сервер не отвечает", "⚠"); }
+}
+
+/* ================== ОТРИСОВКА СОНАРА ================== */
+const spawnTimes = new Map(); // id -> время первого появления (для пружинного выстрела)
+function hashStr(s) {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) { h = ((h << 5) - h + s.charCodeAt(i)) | 0; }
+  return Math.abs(h);
+}
+
+function drawTruncatedLabel(text, x, y, maxW) {
+  ctx.font = `${10 * window.devicePixelRatio}px system-ui, sans-serif`;
+  let t = text;
+  while (ctx.measureText(t).width > maxW && t.length > 1) t = t.slice(0, -2);
+  if (t !== text) t += '…';
+  const w = Math.min(ctx.measureText(t).width + 10 * window.devicePixelRatio, maxW + 10 * window.devicePixelRatio);
+  const h = 15 * window.devicePixelRatio;
+  ctx.fillStyle = 'rgba(12, 10, 8, 0.62)';
+  ctx.beginPath();
+  const r = h / 2;
+  ctx.roundRect(x - w / 2, y - h / 2, w, h, r);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  ctx.fillStyle = 'rgba(200, 195, 185, 0.95)';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(t, x, y);
+  return { x: x - w / 2, y: y - h / 2, w, h };
+}
+
+function drawSonar() {
+  const now = performance.now();
+  const w = canvas.width, h = canvas.height;
+  const cx = w / 2, cy = h / 2;
+  const maxR = Math.min(w, h) * 0.42;
+  const dpr = window.devicePixelRatio;
+
+  ctx.clearRect(0, 0, w, h);
+
+  // Кольца с дистанциями — как в прототипе (170/330/500 м)
+  [1 / 3, 2 / 3, 1].forEach((k, i) => {
+    ctx.beginPath();
+    ctx.arc(cx, cy, maxR * k, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(235, 225, 205, 0.1)';
+    ctx.lineWidth = 1.5 * dpr;
+    ctx.stroke();
+    ctx.font = `${10 * dpr}px system-ui, sans-serif`;
+    ctx.fillStyle = 'rgba(200, 195, 185, 0.4)';
+    ctx.textAlign = 'center';
+    ctx.fillText(RING_LABELS[i], cx, cy - maxR * k - 5 * dpr);
+  });
+
+  // Перекрестия — тонкие
+  ctx.beginPath();
+  ctx.moveTo(cx - maxR, cy); ctx.lineTo(cx + maxR, cy);
+  ctx.moveTo(cx, cy - maxR); ctx.lineTo(cx, cy + maxR);
+  ctx.strokeStyle = 'rgba(235, 225, 205, 0.06)';
+  ctx.stroke();
+
+  // Сигналы: пружинное появление, дрейф, двойной пинг, подпись-пилюля
+  appState.signals.forEach(s => {
+    if (spawnTimes.has(s.id) === false) spawnTimes.set(s.id, now);
+    const born = spawnTimes.get(s.id);
+    const tSince = (now - born) / 1000;
+
+    // пружинный масштаб: 0.4 -> 1.14 -> 1
+    let scale = 1;
+    if (tSince < 0.7) {
+      const k = tSince / 0.7;
+      scale = k < 0.6 ? 0.4 + (1.14 - 0.4) * (k / 0.6) : 1.14 - 0.14 * ((k - 0.6) / 0.4);
+    }
+
+    const sRad = (s.angleDegrees || 45) * Math.PI / 180;
+    // Минимальный радиус поднят — подписи не толпятся у центра
+    const dist = maxR * (0.24 + 0.68 * Math.min(1, Math.max(0.06, s.distanceRatio || 0.5)));
+    // Дрейф: свой период у каждого сигнала — эфир не марширует в ногу
+    const floatDur = 4.5 + (hashStr("float:" + s.id) % 30) / 10;
+    const floatPhase = (hashStr("phase:" + s.id) % 100) / 100 * Math.PI * 2;
+    const floatOff = Math.sin(now / 1000 / floatDur * Math.PI * 2 + floatPhase) * 3 * dpr;
+
+    const sx = cx + dist * Math.cos(sRad);
+    const sy = cy + dist * Math.sin(sRad) + floatOff;
+    const hex = '#' + (s.colorHex & 0xFFFFFF).toString(16).padStart(6, '0');
+
+    // Двойной пинг при появлении
+    if (tSince < 1.9 && tSince > 0.15) {
+      const ringT = (tSince - 0.15) % 0.85;
+      const rr = 12 * dpr + ringT / 0.85 * 22 * dpr;
+      ctx.beginPath();
+      ctx.arc(sx, sy, rr, 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(235, 225, 205, ${0.5 * (1 - ringT / 0.85)})`;
+      ctx.lineWidth = 1.5 * dpr;
+      ctx.stroke();
+    }
+
+    ctx.save();
+    ctx.globalAlpha = s.isGhost ? 0.5 : Math.min(1, tSince * 2);
+    ctx.translate(sx, sy);
+    ctx.scale(scale, scale);
+    ctx.beginPath();
+    ctx.arc(0, 0, (s.isGhost ? 8 : 12) * dpr, 0, Math.PI * 2);
+    ctx.fillStyle = hex;
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(0, 0, (s.isGhost ? 2.5 : 4) * dpr, 0, Math.PI * 2);
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fill();
+    ctx.restore();
+
+    const label = (s.isGhost ? '· ' : '') + `${s.artist} — ${s.title}`;
+    drawTruncatedLabel(label, sx, sy + 26 * dpr + floatOff * 0, maxR * 0.62);
+  });
+
+  // Я в центре — источник эха
+  const myHue = getComputedStyle(document.documentElement).getPropertyValue('--echo-hue') || '75';
+  ctx.beginPath();
+  ctx.arc(cx, cy, 9 * dpr, 0, Math.PI * 2);
+  ctx.fillStyle = `oklch(0.82 0.1 ${myHue.trim() || '75'})`;
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(cx, cy, 3.5 * dpr, 0, Math.PI * 2);
+  ctx.fillStyle = '#FFF';
+  ctx.fill();
+
+  sweepAngle = (sweepAngle + 0.22) % 360; // сам луч рисует CSS .echo-beam
+  requestAnimationFrame(drawSonar);
+}
+
+canvas.addEventListener('click', (e) => {
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / rect.width;
+  const scaleY = canvas.height / rect.height;
+  const clickX = (e.clientX - rect.left) * scaleX;
+  const clickY = (e.clientY - rect.top) * scaleY;
+  const cx = canvas.width / 2, cy = canvas.height / 2;
+  const maxR = Math.min(canvas.width, canvas.height) * 0.42;
+  const dpr = window.devicePixelRatio;
+
+  for (const s of appState.signals) {
+    const sRad = (s.angleDegrees || 45) * Math.PI / 180;
+    const dist = maxR * (0.24 + 0.68 * Math.min(1, Math.max(0.06, s.distanceRatio || 0.5)));
+    const floatDur = 4.5 + (hashStr("float:" + s.id) % 30) / 10;
+    const floatPhase = (hashStr("phase:" + s.id) % 100) / 100 * Math.PI * 2;
+    const floatOff = Math.sin(performance.now() / 1000 / floatDur * Math.PI * 2 + floatPhase) * 3 * dpr;
+    const sx = cx + dist * Math.cos(sRad);
+    const sy = cy + dist * Math.sin(sRad) + floatOff;
+    if (Math.hypot(clickX - sx, clickY - sy) <= 34 * dpr) {
+      openPassport(s);
+      return;
+    }
+  }
+});
+
+/* ================== СТАРТ ================== */
+applyPhase();
+fetchState();
+setInterval(fetchState, 2500);
+requestAnimationFrame(drawSonar);
+</script>
+</body>
+</html>
