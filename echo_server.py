@@ -527,6 +527,12 @@ def init_db():
             """, seed_caps)
             conn.commit()
 
+        # Очистка старых ПК-записей: echo_pc.py теперь использует pc_studio_node,
+        # но в БД могли остаться записи от pc_<имя_компьютера> до обновления.
+        cur.execute("DELETE FROM devices WHERE id LIKE 'pc_%' AND id != 'pc_studio_node'")
+        cur.execute("DELETE FROM listening_history WHERE device_id LIKE 'pc_%' AND device_id != 'pc_studio_node'")
+        conn.commit()
+
         conn.close()
 
 

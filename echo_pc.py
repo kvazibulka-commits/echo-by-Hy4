@@ -329,7 +329,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
                         help="период опроса сервера, секунд (по умолчанию 5)")
     parser.add_argument("--device-id",
                         default=None,
-                        help="идентификатор устройства (по умолчанию pc_<имя компьютера>)")
+                        help="идентификатор устройства (по умолчанию pc_studio_node)")
     parser.add_argument("--token",
                         default="",
                         help="токен ECHO_API_TOKEN для защищённого туннеля")
