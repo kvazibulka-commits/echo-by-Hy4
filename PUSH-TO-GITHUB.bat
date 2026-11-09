@@ -1,44 +1,42 @@
 @echo off
 title ECHO - Push to GitHub
 cd /d "%~dp0"
-chcp 65001 >nul
 
-rem Git установлен портативно внутри WorkBuddy и не прописан в системный PATH.
-rem Добавляем его только для этого окна.
-set "PATH=%LOCALAPPDATA%\Programs\WorkBuddyAI\resources\vendor\PortableGit\cmd;%PATH%"
+rem Portable Git is not in the system PATH. Add it for this window only.
+rem ASCII-only file: no chcp, no Cyrillic - cmd must not re-read it mid-run.
+set "PG=%LOCALAPPDATA%\Programs\WorkBuddyAI\resources\vendor\PortableGit"
+set "PATH=%PG%\cmd;%PG%\mingw64\bin;%PATH%"
+set "GIT=%PG%\cmd\git.exe"
 
 echo ==============================================================
-echo  ЭХО - отправка кода в GitHub
-echo  Репозиторий: kvazibulka-commits/echo-by-Hy4
+echo  ECHO - pushing code to GitHub
+echo  Repo: kvazibulka-commits/echo-by-Hy4
 echo ==============================================================
 echo.
 
-git status
-git remote -v
-if errorlevel 1 (
-  echo.
-  echo Git не найден. Проверь путь к PortableGit.
-  pause
-  exit /b 1
-)
+"%GIT%" status
+"%GIT%" remote -v
+echo.
+echo Pushing branch main...
+echo A GITHUB SIGN-IN WINDOW WILL OPEN - log in and approve.
+echo.
+"%GIT%" push -u origin main
+if errorlevel 1 goto FAILED
 
 echo.
-echo Отправляю ветку main...
-echo СЕЙЧАС ОТКРОЕТСЯ ОКНО ВХОДА GITHUB - войди в свой аккаунт.
-echo.
-git push -u origin main
+echo ==============================================================
+echo  DONE. Open the Actions tab:
+echo  https://github.com/kvazibulka-commits/echo-by-Hy4/actions
+echo ==============================================================
+goto END
 
-if errorlevel 1 (
-  echo.
-  echo ==============================================================
-  echo  Пуш не удался. Если просили пароль - нужен Personal Access
-  echo  Token (scope repo), а не пароль аккаунта.
-  echo ==============================================================
-) else (
-  echo.
-  echo ==============================================================
-  echo  ГОТОВО. Открой вкладку Actions на GitHub:
-  echo  https://github.com/kvazibulka-commits/echo-by-Hy4/actions
-  echo ==============================================================
-)
+:FAILED
+echo.
+echo ==============================================================
+echo  PUSH FAILED.
+echo  If a password was requested, use a GitHub Personal Access
+echo  Token with scope repo - not your account password.
+echo ==============================================================
+
+:END
 pause
